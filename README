@@ -4,7 +4,7 @@ project.
 
 
 ./commandcon - A super simple command pattern interface in Python
-./AutoRender.py - A work in progress for
+./AutoRender.py - A work in progress rendering helper utility for Cherrypy
 
 
 
