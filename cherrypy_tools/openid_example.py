@@ -34,6 +34,11 @@
         Everything else in this action/method is either documented or dumped to the browser for
         transparency.
         
+    OpIDHelper class
+        More of a struct w/functions then class, meant to
+        consolidate utility level logic with the intent of
+        keeping the Root controller more sparse.
+        
 """
 #Default cherrypy
 import cherrypy
@@ -44,34 +49,20 @@ import sys
 from functools import wraps, partial
 from cStringIO import StringIO
 from cgi import escape
-from textwrap import wrap
 
-try:
-    from dbgp.client import brk
-    #Perhaps hijacking cherrypy config might be useful here?
-    brk = partial(brk, host="192.168.56.1", port=9000)
-except ImportError:
-    def brk(*args, **kwatgs):
-        pass
+
 
 #Openid Libs
 try:
     from openid.store import memstore
+    #An alternative to memstore
     from openid.store import filestore
     from openid.consumer import consumer
-    from openid.oidutil import appendArgs
-    from openid.cryptutil import randomString
-    from openid.fetchers import setDefaultFetcher, Urllib2Fetcher
     from openid.extensions import (pape, sreg, ax)
-    from openid.message import NamespaceMap
 except ImportError, e:
     print "Python says ", e, "which I assume is it's way of saying"
     print "\"You should probably install python-openedid\"... that or all of the rum is gone"
     sys.exit(1)
-
-#make this crap slightly prettier
-
-from cStringIO import StringIO
 
 
 
@@ -94,6 +85,15 @@ def oid_store(thread_index):
         This will need to be refactored for a LOT of reasons
         , #1 is the possibility of jumping threads during the authentication
         process
+        
+        There are three provided store types: memory, file, and sql
+        Each has some implementation concerns.
+           Memory is thread specific
+           File can be scaled out to an array but then requires NFS or some
+            other virtual file system to distribute
+           SQL is alright, but doesn't seem compatible with SqlAlchemy or
+           such.
+           
     """
     print "Starting up a new thread @ " , thread_index
     cherrypy.thread_data.store = memstore.MemoryStore()
@@ -174,7 +174,6 @@ def printList(myLocals, title = None):
                 else:
                     print str(item)
             except TypeError, e:
-                brk()
                 print "Type Error on ", e, item
             finally:
                 print "</td>"
@@ -338,7 +337,6 @@ class Root(object):
         #we want public mainline, apps can be reached by appending ?hd=yourDomain.com to the openid provider
         #listed in the XRDS document ( not the federated login endpoint )
         use_google      = "use_gmail" in queryString      
-        #brk()
         if not openid_url and not use_google:
             print mainPage("Main Page", getForm(""), "Missing openid url")
             return True
@@ -392,7 +390,7 @@ class Root(object):
     @buffout
     def process(self, *args, **queryStr):
         
-        printList(queryStr, "queryStr")
+        
 
         oidconsumer = OpIDHelper.getConsumer()
         
@@ -401,7 +399,18 @@ class Root(object):
         sreg_resp = None
         pape_resp = None        
         display_identifier = info.getDisplayIdentifier()
+        
+        #print printLocals(locals())
+        if hasattr(info, "identity_url") and info.identity_url:
+            #Note for google, this looks kind of goofy
+            print mainPage("Main Page", getForm(info.identity_url))
+        elif openid_url:
+            print mainPage("Main Page", getForm(openid_url))
+        else:
+            print mainPage("Main Page", getForm("")) 
 
+        printList(queryStr, "queryStr")
+        
         if info.status == consumer.FAILURE and display_identifier:
             # In the case of failure, if info is non-None, it is the
             # URL that we were verifying. We include it in the error
@@ -425,7 +434,6 @@ class Root(object):
             
             sreg_resp = sreg.SRegResponse.fromSuccessResponse(info)
             pape_resp = pape.Response.fromSuccessResponse(info)
-            #brk()
             ax_resp   = ax.FetchResponse.fromSuccessResponse(info)
             
 
@@ -467,14 +475,7 @@ class Root(object):
             # information in a log.
             print 'Verification failed.', info.status
         
-        #print printLocals(locals())
-        if hasattr(info, "identity_url") and info.identity_url:
-            #Note for google, this looks kind of goofy
-            print mainPage("Main Page", getForm(info.identity_url))
-        elif openid_url:
-            print mainPage("Main Page", getForm(openid_url))
-        else:
-            print mainPage("Main Page", getForm(""))            
+                   
                 
  
 @buffout
