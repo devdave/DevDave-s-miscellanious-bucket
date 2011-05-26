@@ -187,21 +187,6 @@ class OpIDHelper(object):
         The hope is to keep the controller tier slightly LESS
         cluttered with openID stuff.
     """
-    session = None
-    
-    #https://www.google.com/accounts/o8/id
-    @classmethod
-    def getConsumer(cls, stateless=False):
-        """
-            Copy & pasted from consumer.py example in py-OpenID src library
-            NOTE - Cherrypy is a multi-threaded deal which will screw everything up
-            if the request is made in a different thread from the response handling method
-        """
-        if stateless:
-            store = None
-        else:
-            store =  cherrypy.thread_data.store
-        return consumer.Consumer(cls.getSession(), store)
     
     @classmethod
     def getGoogleRequest(cls, consumer):
@@ -211,13 +196,6 @@ class OpIDHelper(object):
         """
         return consumer.begin("https://www.google.com/accounts/o8/id")
         
-    @classmethod
-    def getSession(cls):
-        """Return the existing session or a new session"""
-        if cls.session is None:
-            cls.session = cherrypy.session
-        
-        return cls.session
 
     @classmethod
     def requestRegistrationData(cls, request):
@@ -258,7 +236,30 @@ class OpIDHelper(object):
         ax_request.add(ax.AttrInfo('http://axschema.org/namePerson/first', required =True, alias = "firstname"))
         ax_request.add(ax.AttrInfo('http://axschema.org/namePerson/last', required =True, alias = "lastname"))
         request.addExtension(ax_request)
+
+    @classmethod
+    def capabilities(cls, request):
+        """
+            Checks the request object created by py-openID consumer and returns a dict
+            of all extensions present
+            
+            Fun issue I realized AFTER the fact.  This only confirms capabilities for XRD/Yadis
+            managed endpoints that are considerate enough to list them.  For simpler endpoints
+            like PHP's MyOpenId script... it won't tell you poop until you try.  So better
+            to ask for the kingdom up front then come back a second time.
+        """
+        caps = {}
+        endpointCheck = request.endpoint.type_uris
+        caps['signon_icon'] = "http://specs.openid.net/extensions/ui/1.0/icon" in endpointCheck
+        caps['ax'] = ax.AXMessage.ns_uri in endpointCheck
+        caps['auth2'] = "http://specs.openid.net/auth/2.0/server" in endpointCheck
+        caps['popup'] = "http://specs.openid.net/extensions/ui/1.0/mode/popup" in endpointCheck
+        caps['pape']  = "http://specs.openid.net/extensions/pape/1.0" in endpointCheck
+        caps['sreg']  = sreg.ns_uri in endpointCheck
+        return caps
         
+class cherryAXMessage(ax.AXMessage):
+    
     @classmethod
     def ax2aliases(cls, response):
         """
@@ -267,7 +268,7 @@ class OpIDHelper(object):
             as I copy/pasted & modified below DIRECTLY from extensions.ax.py in the
             python-openid library
         """
-        ax_args = response.extensionResponse(ax.AXMessage.ns_uri, True)
+        ax_args = response.extensionResponse(cls.ns_uri, True)
         valueMap = {}
 
         #Was originally 2 loops, cut this down to 1        
@@ -292,33 +293,13 @@ class OpIDHelper(object):
             valueMap[alias] = values
                 
 
-            
-        
         return valueMap
 
-    @classmethod
-    def capabilities(cls, request):
-        """
-            Checks the request object created by py-openID consumer and returns a dict
-            of all extensions present
-            
-            Fun issue I realized AFTER the fact.  This only confirms capabilities for XRD/Yadis
-            managed endpoints that are considerate enough to list them.  For simpler endpoints
-            like PHP's MyOpenId script... it won't tell you poop until you try.  So better
-            to ask for the kingdom up front then come back a second time.
-        """
-        caps = {}
-        endpointCheck = request.endpoint.type_uris
-        caps['signon_icon'] = "http://specs.openid.net/extensions/ui/1.0/icon" in endpointCheck
-        caps['ax'] = ax.AXMessage.ns_uri in endpointCheck
-        caps['auth2'] = "http://specs.openid.net/auth/2.0/server" in endpointCheck
-        caps['popup'] = "http://specs.openid.net/extensions/ui/1.0/mode/popup" in endpointCheck
-        caps['pape']  = "http://specs.openid.net/extensions/pape/1.0" in endpointCheck
-        caps['sreg']  = sreg.ns_uri in endpointCheck
-        return caps
+
         
 class Root(object):
     
+
     
     @expose
     def index(self):
@@ -341,7 +322,7 @@ class Root(object):
             print mainPage("Main Page", getForm(""), "Missing openid url")
             return True
         
-        oidconsumer = OpIDHelper.getConsumer(stateless = use_stateless)
+        oidconsumer = self.getConsumer(stateless = use_stateless)
         try:
             request = oidconsumer.begin(openid_url) if use_google == False else OpIDHelper.getGoogleRequest(oidconsumer)
         except consumer.DiscoveryFailure, exc:
@@ -349,7 +330,7 @@ class Root(object):
             print mainPage("Main Page", getForm(openid_url))
         else:
             if request is None:
-                print "No Openid services found for <code>%s</code" % openid_url
+                print "No Openid services found for <code>%s</code>" % openid_url
                 print mainPage("Main Page", getForm(openid_url))
                 
             else:
@@ -392,7 +373,7 @@ class Root(object):
         
         
 
-        oidconsumer = OpIDHelper.getConsumer()
+        oidconsumer = self.getConsumer()
         
         url = '%s/process' % cherrypy.request.base
         info = oidconsumer.complete(queryStr, url)
@@ -440,7 +421,7 @@ class Root(object):
             if ax_resp:
                 #For some reason, the aliases I defined earlier ARE returned, used, then thrown away
                 #wtf?
-                axDict = OpIDHelper.ax2aliases(info)
+                axDict = cherryAXMessage.ax2aliases(info)
                 printList(axDict, "Attribute Exchange vars\n")
             
             if pape_resp:
@@ -474,7 +455,20 @@ class Root(object):
             # failure message. The library should supply debug
             # information in a log.
             print 'Verification failed.', info.status
-        
+
+
+    def getConsumer(self, stateless=False):
+        """
+            Copy & pasted from consumer.py example in py-OpenID src library
+            NOTE - Cherrypy is a multi-threaded deal which will screw everything up
+            if the request is made in a different thread from the response handling method
+        """
+        if stateless:
+            store = None
+        else:
+            store =  cherrypy.thread_data.store
+        return consumer.Consumer(cherrypy.session, store)
+     
                    
                 
  
