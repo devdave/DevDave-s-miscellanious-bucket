@@ -1,0 +1,77 @@
+<html>
+    <head>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.js"></script>
+        <script src="./tabcomp.js"></script>
+        <script src="./buffer.js"></script>
+        <style>
+            #log {
+                min-width: 80%;
+                min-height: 250px;
+                color: green;
+                background-color: black;
+                padding: 5px;
+            }
+            
+            #log_entry{
+                cursor: move;
+            }
+            
+            #magicBox {
+                min-width: 80%;
+                background-color: white;
+                color: black;
+                border: inset solid 2px;
+            }
+            
+            #console {
+                width: 100%;
+                border solid thin black;
+                min-width: 200px;
+                color: black;
+            }
+            #cursor {
+                /*text-decoration: blink;*/
+                color: darkgreen;
+                margin-left: -4px;
+            }
+            .blinkOn {
+                color: white !important;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="log"><br/>
+        </div>
+        <div tabindex="1" id="magicBox">
+            <span>Enter here: </span>
+            <span id="console">&nbsp;</span>
+            <span id="cursor">|</span>
+        </div>
+        <script>
+        
+            function blink(element_id, interval){
+                blinker = function(){
+                    $("#" + element_id).toggleClass("blinkOn")
+                }
+                setInterval(blinker, 700);
+            }
+            
+            String.prototype.startswith = function(str){
+                return (this.indexOf(str) === 0);
+            }
+            
+
+            $(function(){
+                var myConsole = new Buffer($("#log"), $("#console"), $("#cursor"));
+                blink("cursor", 500);
+                $(".log_entry").live('click', function(){ myConsole.override($(this).text()); })
+                $("#magicBox")
+                        .keypress( myConsole.handlePress )
+                        .keydown( myConsole.ctrlCode );
+                $("#console")
+                        .keypress( myConsole.handlePress )
+                        .keydown( myConsole.ctrlCode );
+
+            });
+        </script>
+    </body>
